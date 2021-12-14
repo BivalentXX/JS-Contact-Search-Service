@@ -14,94 +14,106 @@
 
 export default class {
     constructor(updates, service) {
-        this.contacts = [];
-        this.formattedContacts = [];
-        this.service = service;
-        updates.on("add", this.contactAdd.bind(this));
-        updates.on("change", this.contactChanged.bind(this));
-        updates.on("remove", this.contactRemoved.bind(this));
+        this.contacts = []
+        this.formattedContacts = []
+        this.service = service
+        this.fetchContacts()
+        updates.on("add", id => this.contactAdd(id, service))
+        updates.on("change", (id, key, value) => this.contactChanged(id, key, value))
+        updates.on("remove", (id) => this.contactRemoved(id))
     }
-    contactAdd(id) {
-        this.service.getById(id).then((result) => {
-        this.contacts.push(result);
+    contactAdd(id, service) {
+        service.getById(id).then((result) => {
+        this.contacts.push(result)
+        // console.log(result)
         });
     }    
     contactChanged(id, key, value) {
         this.contacts.map((contact) => {
-        if (contact[id] === id) {
-            contact[key] = value;
-        }
-        return contact;
+            if (contact.id === id) {
+                contact[key] = value
+                return contact
+            }    
         });
     }    
     contactRemoved(id) {
-        this.contacts = this.contacts.filter((contact) => contact.id !== id);
+        this.contacts = this.contacts.filter((contact) => contact.id !== id)
     }
 
-    async fetchContacts() {
+    async fetchContacts(url) {
         const response = await fetch(url)
         const objectResponse = await response.json()
         return this.contacts = objectResponse
     }
 
-    normalizeString = string => {
-        return string.match(/^[A-Za-z0-9|@|.]+$/)
+    normalizeString(string) {
+        return string.match(/[A-Za-z0-9|@|.|(|)]+/g)
     }
-    normalizeNumbers = string => {
-        return string.match(/^[0-9]+$/)
+    normalizeNumbers(string) { 
+        return string.match(/[0-9]+/g)
     }
     
-    formatPhone = phone => {
-        phone.replace(/^[+1]$/, "")
-        let number = this.normalizeNumbers(phone)
-        return `
-            (${number.substring(0,3)}) 
-            ${number.substring(4,7)}-
-            ${number.substring(7,10)}
-        `;
+    normalizePhone(phone) {
+        let number = this.normalizeNumbers(phone.replace(/(\+1)/g, "")).join('')
+        return `(${number.slice(0,3)}) ${number.slice(3,6)}-${number.slice(6,10)}`;
+    }
+    formatPhoneNumbers(contact) {
+        let phoneNumbers = []
+        const n1 = contact.primaryPhoneNumber
+        const n2 = contact.secondaryPhoneNumber
+        if (n1) { phoneNumbers.push(this.normalizePhone(n1)) }
+        if (n2) { phoneNumbers.push(this.normalizePhone(n2)) }
+        return phoneNumbers
+    }
+
+    formatAddress(contact) {
+        return `${contact.addressLine1} ${contact.addressLine2} ${contact.addressLine3} ${contact.city} ${contact.state} ${contact.zipCode}`
     }
 
     //This function could be a set of functions but this is more concise
-    formatContacts(contacts) {
-        this.fetchContacts()
-        return this.formattedContacts = contacts.map(result => {
-            contact = {
-                id: result.id,
-                name:
-                result.nickName.length > 0
-                    ? `${result.nickName} ${result.lastName}`
-                    : `${result.firstName} ${result.lastName}`,
-                phones: [this.formatPhone(result.primaryPhoneNumber),
-                        this.formatPhone(result.secondaryPhoneNumber)],
-                email: result.emailAddress || result.primaryEmail || "",
-                address: result.address || "",
-                role: result.role || ""
-            };
-        })
+    formatContacts(contact) {
+        const object = {
+                id: contact.id,
+                name: 
+                contact.nickName.length > 0 ?
+                    `${contact.nickName} ${contact.lastName}`
+                    : `${contact.firstName} ${contact.lastName}`,
+                phones: this.formatPhoneNumbers(contact),
+                email: contact.primaryEmail || contact.secondaryEmail || "",
+                address: contact.addressLine1 ? this.formatAddress(contact) : ""
+            } 
+        return object
     }
 
     search(query) {
-        this.fetchContacts(url)
+        // this.fetchContacts(url)
         const contacts = this.contacts
-        const query = normalizeString(query)
+        const querySearch = this.normalizeString(query)
+     
         let searchResult = [] 
         let cacheIds = []
-
         contacts.forEach(contact => {
             for (const [key, value] of Object.entries(contact)) {
+
                 //push contacts, where either strings or nested arrays contain the query argument
-                if (key != id  && (
-                        value.toLowerCase().includes(query.toLowerCase()) ||
-                        value.indexOf(query) > -1 
+                //I may have overcomplicated this when I could have just dealt in strings instead of arrays
+                if (key != 'id'  && (
+                        querySearch.indexOf(value) > -1 ||
+                        querySearch.filter(x => value.includes(x)).length > 0 || 
+                        this.normalizeNumbers(value)?.join('').includes(this.normalizeNumbers(query)?.join(''))
                         )
                     ) {
-                    searchResult.push(contact)
-                    cache.push(contact.id)
+                    if (!searchResult.includes(contact)) { 
+                        searchResult.push(contact)
+                    }
+                    
+                    // cacheIds.push(contact.id)
                 }
             }
         })
-        searchResults = this.formatContacts(searchResult)
-        return {searchResults, cacheIds}
+        searchResult = searchResult.map(result => this.formatContacts(result))
+
+        return searchResult
     }
 
 }
